@@ -4,12 +4,15 @@ import pandas as pd
 import re
 from datetime import datetime
 
-# Configuración de la base de datos
+# Configuración de la base de datos (LEYENDO SECRETS)
+# ATENCIÓN: Las credenciales reales están en Streamlit Cloud Secrets.
 DB_CONFIG = {
-    "host": "localhost",
-    "database": "pacientes_db",
-    "user": "postgres",
-    "password": "12345678"
+    # Usamos st.secrets para leer las variables definidas en la configuración [connections.postgresql]
+    "host": st.secrets["connections"]["postgresql"]["host"],
+    "database": st.secrets["connections"]["postgresql"]["database"],
+    "user": st.secrets["connections"]["postgresql"]["username"],
+    "password": st.secrets["connections"]["postgresql"]["password"],
+    "port": st.secrets["connections"]["postgresql"]["port"]
 }
 
 # Configuración de la página
@@ -61,40 +64,51 @@ st.markdown("""
 class DatabaseManager:
     def __init__(self, config):
         self.config = config
-        self.create_table()
-    
-    def get_connection(self):
-        return psycopg2.connect(**self.config)
-    
-    def create_table(self):
+        
+        # Intentamos obtener la conexión antes de llamar a create_table, 
+        # para que la excepción se maneje correctamente en el constructor.
+        conn = None 
         try:
             conn = self.get_connection()
-            cursor = conn.cursor()
-            
-            create_table_query = """
-            CREATE TABLE IF NOT EXISTS encuestas_calidad (
-                id SERIAL PRIMARY KEY,
-                cedula VARCHAR(20) NOT NULL,
-                fue_atendido VARCHAR(5) NOT NULL,
-                tiempo_atencion VARCHAR(20) NOT NULL,
-                calidad_servicio VARCHAR(20) NOT NULL,
-                sugerencias TEXT,
-                fecha_encuesta TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-                UNIQUE(cedula)
-            );
-            """
-            
-            cursor.execute(create_table_query)
-            conn.commit()
-            
+            # Si la conexión es exitosa, creamos la tabla
+            self.create_table(conn)
         except Exception as e:
+            # Capturamos el error si no podemos conectar al inicio
             st.error(f"Error al conectar con la base de datos: {e}")
         finally:
             if conn:
-                cursor.close()
-                conn.close()
+                conn.close() # Aseguramos que se cierre la conexión si existe
+    
+    def get_connection(self):
+        """Retorna una conexión activa a la base de datos."""
+        # Se genera una excepción si la conexión falla (p. ej. credenciales incorrectas)
+        return psycopg2.connect(**self.config)
+    
+    def create_table(self, conn):
+        """Crea la tabla si no existe, utilizando la conexión ya establecida."""
+        cursor = conn.cursor()
+        
+        create_table_query = """
+        CREATE TABLE IF NOT EXISTS encuestas_calidad (
+            id SERIAL PRIMARY KEY,
+            cedula VARCHAR(20) NOT NULL,
+            fue_atendido VARCHAR(5) NOT NULL,
+            tiempo_atencion VARCHAR(20) NOT NULL,
+            calidad_servicio VARCHAR(20) NOT NULL,
+            sugerencias TEXT,
+            fecha_encuesta TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+            UNIQUE(cedula)
+        );
+        """
+        
+        cursor.execute(create_table_query)
+        conn.commit()
+        cursor.close()
+
     
     def insert_encuesta(self, cedula, fue_atendido, tiempo_atencion, calidad_servicio, sugerencias):
+        conn = None
+        cursor = None
         try:
             conn = self.get_connection()
             cursor = conn.cursor()
@@ -119,8 +133,9 @@ class DatabaseManager:
             st.error(f"Error al insertar encuesta: {e}")
             return False
         finally:
-            if conn:
+            if cursor:
                 cursor.close()
+            if conn:
                 conn.close()
 
 def validate_cedula(cedula):
@@ -183,6 +198,7 @@ def show_cedula_help():
 
 def main():
     # Inicializar base de datos
+    # La conexión fallará si las credenciales no están en Streamlit Secrets
     db_manager = DatabaseManager(DB_CONFIG)
     
     # Logo y título
