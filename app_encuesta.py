@@ -4,16 +4,25 @@ import pandas as pd
 import re
 from datetime import datetime
 
-# Configuración de la base de datos (LEYENDO SECRETS)
-# ATENCIÓN: Las credenciales reales están en Streamlit Cloud Secrets.
-DB_CONFIG = {
-    # Usamos st.secrets para leer las variables definidas en la configuración [connections.postgresql]
-    "host": st.secrets["connections"]["postgresql"]["host"],
-    "database": st.secrets["connections"]["postgresql"]["database"],
-    "user": st.secrets["connections"]["postgresql"]["username"],
-    "password": st.secrets["connections"]["postgresql"]["password"],
-    "port": st.secrets["connections"]["postgresql"]["port"]
-}
+# =========================================================
+# MODIFICACIÓN CLAVE: LECTURA SEGURA DE CREDENCIALES
+# =========================================================
+# Usa st.secrets para obtener las credenciales definidas en [connections.postgresql]
+try:
+    DB_CONFIG = {
+        "host": st.secrets["connections"]["postgresql"]["host"],
+        "database": st.secrets["connections"]["postgresql"]["database"],
+        "user": st.secrets["connections"]["postgresql"]["username"],
+        "password": st.secrets["connections"]["postgresql"]["password"],
+        "port": st.secrets["connections"]["postgresql"]["port"]
+    }
+except KeyError:
+    # Este error solo ocurre si los Secrets no están configurados correctamente.
+    # En un entorno local, puedes usar un archivo .streamlit/secrets.toml
+    st.error("Error: Las credenciales de la base de datos no están configuradas correctamente en Streamlit Secrets.")
+    st.stop()
+# =========================================================
+
 
 # Configuración de la página
 st.set_page_config(
@@ -65,23 +74,20 @@ class DatabaseManager:
     def __init__(self, config):
         self.config = config
         
-        # Intentamos obtener la conexión antes de llamar a create_table, 
-        # para que la excepción se maneje correctamente en el constructor.
         conn = None 
         try:
             conn = self.get_connection()
-            # Si la conexión es exitosa, creamos la tabla
             self.create_table(conn)
         except Exception as e:
-            # Capturamos el error si no podemos conectar al inicio
             st.error(f"Error al conectar con la base de datos: {e}")
+            # Detener el flujo de la app si la base de datos es esencial
+            st.stop()
         finally:
             if conn:
-                conn.close() # Aseguramos que se cierre la conexión si existe
+                conn.close() 
     
     def get_connection(self):
         """Retorna una conexión activa a la base de datos."""
-        # Se genera una excepción si la conexión falla (p. ej. credenciales incorrectas)
         return psycopg2.connect(**self.config)
     
     def create_table(self, conn):
@@ -139,20 +145,13 @@ class DatabaseManager:
                 conn.close()
 
 def validate_cedula(cedula):
-    """
-    Valida el formato de la cédula de manera estricta
-    Formatos aceptados: V-1234567, V-12345678, E-12345678
-    """
-    # Limpiar espacios y convertir a mayúsculas
+    # ... (Resto del código de validación y presentación, sin cambios)
     cedula = cedula.strip().upper()
-    
-    # Patrón regex para validación
     pattern = r'^[VE]-\d{7,8}$'
     
     if not re.match(pattern, cedula):
         return False, "Formato inválido. Use: V-12345678 o E-12345678"
     
-    # Validar que los dígitos sean números
     digitos = cedula[2:]
     if not digitos.isdigit():
         return False, "Los dígitos después del guión deben ser números"
@@ -160,7 +159,6 @@ def validate_cedula(cedula):
     return True, "Cédula válida"
 
 def show_success_message(cedula, fue_atendido, tiempo_atencion, calidad_servicio, sugerencias):
-    """Muestra mensaje de éxito con los datos ingresados"""
     success_html = f"""
     <div class="success-box">
         <h3>✅ ¡Encuesta Completada Exitosamente!</h3>
@@ -176,7 +174,6 @@ def show_success_message(cedula, fue_atendido, tiempo_atencion, calidad_servicio
     st.balloons()
 
 def show_cedula_help():
-    """Muestra ayuda sobre el formato de cédula"""
     help_html = """
     <div class="info-box">
         <h4>📋 Formato de Cédula Requerido</h4>
@@ -198,7 +195,6 @@ def show_cedula_help():
 
 def main():
     # Inicializar base de datos
-    # La conexión fallará si las credenciales no están en Streamlit Secrets
     db_manager = DatabaseManager(DB_CONFIG)
     
     # Logo y título
