@@ -5,33 +5,38 @@ import re
 from datetime import datetime
 
 # =========================================================
-# MODIFICACIÓN CLAVE: LECTURA SEGURA DE CREDENCIALES
+# CONFIGURACIÓN PARA SUPABASE
 # =========================================================
-# Usa st.secrets para obtener las credenciales definidas en [connections.postgresql]
 try:
     DB_CONFIG = {
-        "host": st.secrets["connections"]["postgresql"]["host"],
-        "database": st.secrets["connections"]["postgresql"]["database"],
-        "user": st.secrets["connections"]["postgresql"]["username"],
-        "password": st.secrets["connections"]["postgresql"]["password"],
-        "port": st.secrets["connections"]["postgresql"]["port"]
+        "host": st.secrets["SUPABASE_HOST"],
+        "database": st.secrets["SUPABASE_DATABASE"],
+        "user": st.secrets["SUPABASE_USER"],
+        "password": st.secrets["SUPABASE_PASSWORD"],
+        "port": st.secrets["SUPABASE_PORT"]
     }
 except KeyError:
-    # Este error solo ocurre si los Secrets no están configurados correctamente.
-    # En un entorno local, puedes usar un archivo .streamlit/secrets.toml
-    st.error("Error: Las credenciales de la base de datos no están configuradas correctamente en Streamlit Secrets.")
+    st.error("""
+    ❌ Error: Las credenciales de Supabase no están configuradas.
+    
+    Por favor, configura los siguientes secrets en Streamlit:
+    - SUPABASE_HOST
+    - SUPABASE_DATABASE  
+    - SUPABASE_USER
+    - SUPABASE_PASSWORD
+    - SUPABASE_PORT
+    """)
     st.stop()
 # =========================================================
 
-
-# Configuración de la página
+# Configuración de la página (igual que antes)
 st.set_page_config(
     page_title="Encuesta de Calidad - FASMEE",
     page_icon="🏥",
     layout="centered"
 )
 
-# Estilos CSS personalizados
+# Estilos CSS personalizados (igual que antes)
 st.markdown("""
 <style>
     .main {
@@ -74,24 +79,31 @@ class DatabaseManager:
     def __init__(self, config):
         self.config = config
         
+        # Probar conexión y crear tabla
         conn = None 
         try:
             conn = self.get_connection()
-            self.create_table(conn)
+            if conn:
+                self.create_table(conn)
+                st.success("✅ Conectado a Supabase correctamente")
         except Exception as e:
-            st.error(f"Error al conectar con la base de datos: {e}")
-            # Detener el flujo de la app si la base de datos es esencial
-            st.stop()
+            st.error(f"❌ Error al conectar con Supabase: {e}")
+            st.info("""
+            🔧 Solución de problemas:
+            1. Verifica que las credenciales sean correctas
+            2. Asegúrate de que Supabase esté ejecutándose
+            3. Revisa la configuración de red y firewall
+            """)
         finally:
             if conn:
                 conn.close() 
     
     def get_connection(self):
-        """Retorna una conexión activa a la base de datos."""
+        """Retorna una conexión activa a Supabase."""
         return psycopg2.connect(**self.config)
     
     def create_table(self, conn):
-        """Crea la tabla si no existe, utilizando la conexión ya establecida."""
+        """Crea la tabla si no existe en Supabase."""
         cursor = conn.cursor()
         
         create_table_query = """
@@ -110,7 +122,20 @@ class DatabaseManager:
         cursor.execute(create_table_query)
         conn.commit()
         cursor.close()
-
+        
+        # Verificar que la tabla se creó
+        cursor = conn.cursor()
+        cursor.execute("""
+        SELECT EXISTS (
+            SELECT FROM information_schema.tables 
+            WHERE table_name = 'encuestas_calidad'
+        );
+        """)
+        table_exists = cursor.fetchone()[0]
+        cursor.close()
+        
+        if table_exists:
+            st.success("✅ Tabla 'encuestas_calidad' verificada/creada en Supabase")
     
     def insert_encuesta(self, cedula, fue_atendido, tiempo_atencion, calidad_servicio, sugerencias):
         conn = None
@@ -136,7 +161,7 @@ class DatabaseManager:
             return True
             
         except Exception as e:
-            st.error(f"Error al insertar encuesta: {e}")
+            st.error(f"❌ Error al insertar encuesta en Supabase: {e}")
             return False
         finally:
             if cursor:
@@ -144,8 +169,8 @@ class DatabaseManager:
             if conn:
                 conn.close()
 
+# Las funciones restantes se mantienen igual...
 def validate_cedula(cedula):
-    # ... (Resto del código de validación y presentación, sin cambios)
     cedula = cedula.strip().upper()
     pattern = r'^[VE]-\d{7,8}$'
     
@@ -168,6 +193,7 @@ def show_success_message(cedula, fue_atendido, tiempo_atencion, calidad_servicio
         <p><strong>Calidad del servicio:</strong> {calidad_servicio}</p>
         <p><strong>Sugerencias:</strong> {sugerencias if sugerencias else 'Ninguna'}</p>
         <p><strong>Fecha:</strong> {datetime.now().strftime('%Y-%m-%d %H:%M')}</p>
+        <p><strong>Almacenado en:</strong> Supabase</p>
     </div>
     """
     st.markdown(success_html, unsafe_allow_html=True)
@@ -194,7 +220,7 @@ def show_cedula_help():
     st.markdown(help_html, unsafe_allow_html=True)
 
 def main():
-    # Inicializar base de datos
+    # Inicializar base de datos con Supabase
     db_manager = DatabaseManager(DB_CONFIG)
     
     # Logo y título
@@ -203,6 +229,7 @@ def main():
         st.image("https://cdn-icons-png.flaticon.com/512/1006/1006555.png", width=100)
         st.title("🏥 Encuesta de Calidad")
         st.markdown("### FASMEE - Sistema de Satisfacción del Paciente")
+        st.markdown("**Base de datos: Supabase** ☁️")
         st.markdown("---")
     
     # Mostrar ayuda sobre formato de cédula
@@ -265,7 +292,7 @@ def main():
         
         # Botón de envío
         submitted = st.form_submit_button(
-            "🚀 Enviar Encuesta",
+            "🚀 Enviar Encuesta a Supabase",
             type="primary",
             use_container_width=True
         )
@@ -288,7 +315,7 @@ def main():
                 return
             
             # Mostrar spinner de carga
-            with st.spinner("⏳ Guardando su encuesta..."):
+            with st.spinner("⏳ Guardando su encuesta en Supabase..."):
                 # Insertar en base de datos
                 success = db_manager.insert_encuesta(
                     cedula, 
@@ -306,12 +333,12 @@ def main():
                 if st.button("📋 Realizar Otra Encuesta", use_container_width=True):
                     st.rerun()
             else:
-                st.error("❌ Error al guardar la encuesta. Por favor, intente nuevamente.")
+                st.error("❌ Error al guardar la encuesta en Supabase. Por favor, intente nuevamente.")
     
     # Footer
     st.markdown("---")
     st.caption("© 2024 FASMEE - Sistema de Encuestas de Calidad")
-    st.caption("*Todos los datos son confidenciales y se utilizan únicamente para mejorar nuestros servicios*")
+    st.caption("*Todos los datos son confidenciales y se almacenan de forma segura en Supabase*")
 
 if __name__ == "__main__":
     main()
